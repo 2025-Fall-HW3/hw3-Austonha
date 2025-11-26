@@ -62,7 +62,14 @@ class EqualWeightPortfolio:
         """
         TODO: Complete Task 1 Below
         """
+        # 等權重：對所有非 exclude 資產給 1/N，SPY 權重為 0
+        n_assets = len(assets)
+        equal_weight = 1.0 / n_assets
 
+        # 對所有日期都給相同的等權重
+        self.portfolio_weights[assets] = equal_weight
+        # 被排除的資產（例如 SPY）給 0
+        self.portfolio_weights[self.exclude] = 0.0
         """
         TODO: Complete Task 1 Above
         """
@@ -113,8 +120,23 @@ class RiskParityPortfolio:
         """
         TODO: Complete Task 2 Below
         """
+        # 風險平價：用過去 lookback 天的報酬率計算波動度，
+        # 權重 = (1 / sigma) / Σ (1 / sigma)
+          # 避免除以 0
 
+        # 從第 lookback+1 天開始算（模仿 MeanVariance 的寫法）
+        for i in range(self.lookback + 1, len(df)):
+            # 使用過去 lookback 天的報酬
+            window_returns = df_returns[assets].iloc[i - self.lookback : i]
 
+            # 計算每個資產的波動度（標準差）
+            vol = window_returns.std() 
+
+            inv_vol = 1.0 / vol
+            weights = inv_vol / inv_vol.sum()
+
+            # 把當天的權重寫到 portfolio_weights
+            self.portfolio_weights.loc[df.index[i], assets] = weights.values
 
         """
         TODO: Complete Task 2 Above
@@ -190,8 +212,22 @@ class MeanVariancePortfolio:
 
                 # Sample Code: Initialize Decision w and the Objective
                 # NOTE: You can modify the following code
-                w = model.addMVar(n, name="w", ub=1)
-                model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+                # Decision variable: w >= 0 (long-only)
+                w = model.addMVar(n, lb=0.0, name="w")
+
+                # Budget constraint: sum(w) = 1 (no leverage)
+                model.addConstr(w.sum() == 1.0, name="budget")
+
+                # Objective: max w^T mu - (gamma/2) * w^T Sigma w
+                # 線性部分
+                linear_term = mu @ w
+
+                # 二次項 w^T Sigma w
+                quad_term = w @ Sigma @ w
+
+                # 設定目標：最大化
+                model.setObjective(linear_term - (gamma / 2.0) * quad_term, gp.GRB.MAXIMIZE)
+
 
                 """
                 TODO: Complete Task 3 Above

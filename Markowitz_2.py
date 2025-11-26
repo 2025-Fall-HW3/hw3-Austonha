@@ -70,7 +70,55 @@ class MyPortfolio:
         """
         TODO: Complete Task 4 Below
         """
-        
+        eps = 1e-8
+        assets = self.price.columns[self.price.columns != self.exclude]
+
+        lookback_ret = 120     # 動能視窗
+        lookback_vol = 30      # 波動視窗
+        lookback_ma = 200      # 均線視窗
+
+        # 預先算好 200MA（避免每次 loop 重算）
+        ma200 = self.price[assets].rolling(lookback_ma).mean()
+
+        for i in range(len(self.price)):
+            date = self.price.index[i]
+
+            # ---- Step 0: 資料不足時（前 200 天）全部設為 0 ----
+            if i < max(lookback_ret, lookback_ma):
+                self.portfolio_weights.loc[date, assets] = 0
+                continue
+
+            # ---- Step 1: 偵測哪些資產突破 200MA ----
+            valid_assets = [
+                a for a in assets 
+                if self.price[a].iloc[i] > ma200[a].iloc[i]
+            ]
+
+            if len(valid_assets) == 0:
+                # 沒有資產站上均線 → 全部 0
+                self.portfolio_weights.loc[date, assets] = 0
+                continue
+
+            # ---- Step 2: 動能排名（只在 valid assets 裡比較） ----
+            past_returns = self.price[valid_assets].iloc[i - lookback_ret:i].pct_change().sum()
+
+            # 只選 top1
+            top1 = past_returns.sort_values(ascending=False).head(3).index
+
+            # ---- Step 3: 計算 top1 的波動（risk parity，top1 → 權重 = 1） ----
+            vol = self.returns[top1].iloc[i - lookback_vol:i].std() + eps
+            inv_vol = 1 / vol
+            w = inv_vol / inv_vol.sum()   # top1 → w = [1]
+
+            # ---- Step 4: 初始化今日所有資產 = 0 ----
+            self.portfolio_weights.loc[date, assets] = 0
+
+            # ---- Step 5: top1 權重填上 ----
+            self.portfolio_weights.loc[date, top1] = w.values
+
+        # SPY 欄位 = 0
+        self.portfolio_weights[self.exclude] = 0.0
+
         
         """
         TODO: Complete Task 4 Above
